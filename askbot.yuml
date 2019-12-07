@@ -1,0 +1,127 @@
+---
+- hosts: all
+  user: root
+  become: true
+
+  tasks:
+
+  - name: Recursively change ownership of a directory
+    file:
+      path: /home/askbot/app
+      state: directory
+      recurse: yes
+      owner: askbot
+      group: askbot
+
+  - name: Recursively change ownership of a directory
+    file:
+      path: /home/askbot/app/myapp
+      state: directory
+      recurse: yes
+      owner: askbot
+      group: askbot
+
+  - name: require file 
+    shell: |
+      echo 'six==1.10' > /home/askbot/app/require.txt
+
+  - name: Initiate virtualenv
+    pip: virtualenv="/home/askbot/app/"
+         requirements="/home/askbot/app/require.txt"
+
+  - name: Install
+    shell: cd /home/askbot/app/ && source bin/activate && pip install psycopg2 six && cd myapp && ls | grep askbot-devel || git clone git://github.com/ASKBOT/askbot-devel.git; mv askbot-devel/* . || ls && ls /home/askbot/app/bin/ | grep askbot-setup || python setup.py develop
+    args:
+      executable: /bin/bash
+    ignore_errors: yes
+
+  - name: Initialization
+    shell: cd /home/askbot/app/ && source bin/activate && cd myapp && askbot-setup --dir-name=. --db-engine=1 --db-name=askbotdb --db-user=taras --db-password=123456 --db-host=127.0.0.1 --db-port=5432
+    args:
+      executable: /bin/bash
+    ignore_errors: yes
+
+  - name: Collectstatic
+    shell: cd /home/askbot/app/ && source bin/activate && cd myapp && python manage.py collectstatic --noinput
+    args:
+      executable: /bin/bash
+    ignore_errors: yes
+
+  - name: SyncDB
+    shell: cd /home/askbot/app/ && source bin/activate && cd myapp && python manage.py syncdb --noinput
+    args:
+      executable: /bin/bash
+    ignore_errors: yes
+
+  - name: Change nginx.conf
+    shell: echo -e "user nginx;\n
+                    worker_processes auto;\n
+                    error_log /var/log/nginx/error.log;\n
+                    pid /run/nginx.pid;\n
+                    
+                    include /usr/share/nginx/modules/*.conf;\n
+                    
+                    events {\n
+                        worker_connections 1024;\n
+                    }\n
+
+                    http {\n
+                        log_format  main  '\$remote_addr - \$remote_user [\$time_local] "\$request" '\n
+                                              '\$status \$body_bytes_sent "\$http_referer" '\n
+                                              '"\$http_user_agent" "\$http_x_forwarded_for"';\n
+                                              
+                        access_log  /var/log/nginx/access.log  main;\n
+                        
+                        sendfile            on;\n
+                        tcp_nopush          on;\n
+                        tcp_nodelay         on;\n
+                        keepalive_timeout   65;\n
+                        types_hash_max_size 2048;\n
+                        
+                        include             /etc/nginx/mime.types;\n
+                        default_type        application/octet-stream;\n
+                     
+                   include /etc/nginx/conf.d/*.conf;\n
+                   }" > /etc/nginx/nginx.conf
+    args:
+      executable: /bin/bash
+    ignore_errors: yes
+
+  - name: Install semanage lib
+    shell: yum -y install libsemanage-python
+    args:
+      executable: /bin/bash
+    ignore_errors: yes
+
+  - name: Set httpd_can_network_connect flag on and keep it persistent across reboots
+    seboolean:
+      name: httpd_can_network_connect
+      state: yes
+      persistent: yes
+
+  - name: change owner and group
+    shell: chown askbot:nginx /home/askbot/app
+    args:
+      executable: /bin/bash
+    ignore_errors: yes
+
+  - name: enable service NGINX and ensure it is not masked
+    systemd:
+      name: nginx
+      state: restarted
+      daemon_reload: yes
+      masked: no
+
+  - name: enable service uWSGI and ensure it is not masked
+    systemd:
+      name: uwsgi
+      state: restarted
+      daemon_reload: yes
+      masked: no
+
+  - name: Curl test
+    shell: curl http://127.0.0.1
+    args:
+      executable: /bin/bash
+    ignore_errors: yes
+
