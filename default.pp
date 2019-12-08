@@ -85,6 +85,10 @@ exec { 'Nginx restart':
    command => '/bin/sudo systemctl start nginx',
 }
 
+exec { 'Nginx enable':
+   command => '/bin/sudo systemctl daemon-reload && /bin/sudo systemctl enable nginx',
+}
+
 ###########################PostgreSQL Install#############################
 
 exec { 'PostgreSQL packages installation':
